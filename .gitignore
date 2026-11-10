@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+
+# venv
+.venv/
+
+# DB（ローカルの実行データ。実データは入れない方針だが念のため上げない）
+genka.db
+
+# 秘密情報
+.env
+.streamlit/secrets.toml
+
+# ログ
+streamlit_log.txt
+
+# Claude Code
+.claude/
+Claude outputs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
