@@ -1,9 +1,8 @@
-import sqlite3
+from contextlib import closing
 
 import pandas as pd
+import psycopg2
 import streamlit as st
-
-DB_PATH = "genka.db"
 
 # 表示用の列順（CLAUDE.mdの仕様どおり）
 DISPLAY_COLUMNS = ["工番", "分番", "組番", "実績額", "着地見込み", "予算額", "コメント"]
@@ -15,24 +14,8 @@ def calc_mikomi(jisseki):
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
-
-
-def init_db():
-    with get_connection() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS genka (
-                kouban TEXT NOT NULL,
-                bunban TEXT NOT NULL,
-                kumiban TEXT NOT NULL,
-                jisseki REAL NOT NULL DEFAULT 0,
-                yosan REAL NOT NULL DEFAULT 0,
-                comment TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (kouban, bunban, kumiban)
-            )
-            """
-        )
+    # 接続文字列はst.secretsからのみ読む。コードに直接書かない
+    return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 
 def read_csv_as_str_keys(uploaded_file, amount_column):
@@ -54,35 +37,37 @@ def read_csv_as_str_keys(uploaded_file, amount_column):
 
 
 def upsert_budget(df):
-    with get_connection() as conn:
-        for _, row in df.iterrows():
-            conn.execute(
-                """
-                INSERT INTO genka (kouban, bunban, kumiban, yosan)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(kouban, bunban, kumiban)
-                DO UPDATE SET yosan = excluded.yosan
-                """,
-                (row["工番"], row["分番"], row["組番"], row["予算額"]),
-            )
+    with closing(get_connection()) as conn:
+        with conn, conn.cursor() as cur:
+            for _, row in df.iterrows():
+                cur.execute(
+                    """
+                    INSERT INTO genka (kouban, bunban, kumiban, yosan)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (kouban, bunban, kumiban)
+                    DO UPDATE SET yosan = excluded.yosan
+                    """,
+                    (row["工番"], row["分番"], row["組番"], row["予算額"]),
+                )
 
 
 def upsert_actual(df):
-    with get_connection() as conn:
-        for _, row in df.iterrows():
-            conn.execute(
-                """
-                INSERT INTO genka (kouban, bunban, kumiban, jisseki)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(kouban, bunban, kumiban)
-                DO UPDATE SET jisseki = excluded.jisseki
-                """,
-                (row["工番"], row["分番"], row["組番"], row["実績額"]),
-            )
+    with closing(get_connection()) as conn:
+        with conn, conn.cursor() as cur:
+            for _, row in df.iterrows():
+                cur.execute(
+                    """
+                    INSERT INTO genka (kouban, bunban, kumiban, jisseki)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (kouban, bunban, kumiban)
+                    DO UPDATE SET jisseki = excluded.jisseki
+                    """,
+                    (row["工番"], row["分番"], row["組番"], row["実績額"]),
+                )
 
 
 def load_all():
-    with get_connection() as conn:
+    with closing(get_connection()) as conn:
         df = pd.read_sql_query(
             "SELECT * FROM genka ORDER BY kouban, bunban, kumiban", conn
         )
@@ -96,26 +81,28 @@ def load_all():
             "comment": "コメント",
         }
     )
+    # jisseki/yosanはPostgresのNUMERIC型なのでDecimalとして返ってくる。計算できるようfloatにする
+    df["実績額"] = pd.to_numeric(df["実績額"])
+    df["予算額"] = pd.to_numeric(df["予算額"])
     df["着地見込み"] = df["実績額"].apply(calc_mikomi)
     return df[DISPLAY_COLUMNS]
 
 
 def save_comments(edited_df):
-    with get_connection() as conn:
-        for _, row in edited_df.iterrows():
-            conn.execute(
-                """
-                UPDATE genka SET comment = ?
-                WHERE kouban = ? AND bunban = ? AND kumiban = ?
-                """,
-                (row["コメント"], row["工番"], row["分番"], row["組番"]),
-            )
+    with closing(get_connection()) as conn:
+        with conn, conn.cursor() as cur:
+            for _, row in edited_df.iterrows():
+                cur.execute(
+                    """
+                    UPDATE genka SET comment = %s
+                    WHERE kouban = %s AND bunban = %s AND kumiban = %s
+                    """,
+                    (row["コメント"], row["工番"], row["分番"], row["組番"]),
+                )
 
 
-st.set_page_config(page_title="原価管理（段階0）", layout="wide")
-st.title("原価管理アプリ（段階0・ローカル版）")
-
-init_db()
+st.set_page_config(page_title="原価管理（段階2）", layout="wide")
+st.title("原価管理アプリ（段階2・Supabase版）")
 
 col1, col2 = st.columns(2)
 
