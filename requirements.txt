@@ -1,3 +1,5 @@
 streamlit==1.67.0
 pandas==2.2.3
 psycopg2-binary==2.9.10
+Authlib==1.9.5
+httpx==0.28.1

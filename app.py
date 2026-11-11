@@ -101,8 +101,21 @@ def save_comments(edited_df):
                 )
 
 
-st.set_page_config(page_title="原価管理（段階2）", layout="wide")
-st.title("原価管理アプリ（段階2・Supabase版）")
+st.set_page_config(page_title="原価管理（段階3）", layout="wide")
+st.title("原価管理アプリ（段階3・ログイン版）")
+
+# --- 認証：ログインしていない人には、ログインボタンだけを見せて止める ---
+if not st.user.is_logged_in:
+    st.write("このアプリを使うには、Googleアカウントでログインしてください。")
+    st.button("Googleでログイン", on_click=st.login)
+    st.stop()  # ここで処理終了。下の表やアップロード欄（DB接続も）は実行されない
+
+# --- ログイン中：自分のメールアドレスとログアウトボタン ---
+user_col, logout_col = st.columns([4, 1])
+with user_col:
+    st.write(f"ログイン中：{st.user.email}")
+with logout_col:
+    st.button("ログアウト", on_click=st.logout)
 
 col1, col2 = st.columns(2)
 
